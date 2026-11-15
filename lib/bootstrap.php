@@ -11,6 +11,21 @@ const VIETTEL_SINVOICE_VERSION = '1.0.0';
 const VIETTEL_SINVOICE_TABLE = 'mod_viettel_sinvoice_invoices';
 const VIETTEL_SINVOICE_DEFAULT_BASE_URL = 'https://api-vinvoice.viettel.vn/services/einvoiceapplication/api';
 
+/**
+ * Resolve a bilingual language string (English/Vietnamese) with fallback.
+ * Dịch chuỗi song ngữ Anh/Việt với giá trị dự phòng.
+ */
+function viettel_sinvoice_lang(string $key, string $fallback = ''): string
+{
+    global $_ADDONLANG;
+
+    if (isset($_ADDONLANG[$key]) && is_string($_ADDONLANG[$key]) && $_ADDONLANG[$key] !== '') {
+        return $_ADDONLANG[$key];
+    }
+
+    return $fallback;
+}
+
 function viettel_sinvoice_setting(string $key, $default = ''): string
 {
     try {
@@ -364,12 +379,12 @@ function viettel_sinvoice_access_token(): string
     logModuleCall(VIETTEL_SINVOICE_MODULE, 'auth/login', viettel_sinvoice_redact($payload), $responseForLog, [], [$payload['password']]);
 
     if ($errno) {
-        throw new RuntimeException('Viettel SInvoice login transport error.');
+        throw new RuntimeException(viettel_sinvoice_lang('msg_login_transport', 'Viettel SInvoice login transport error.'));
     }
 
     $decoded = is_string($raw) && trim($raw) !== '' ? json_decode($raw, true) : [];
     if (!is_array($decoded)) {
-        throw new RuntimeException('Viettel SInvoice login returned invalid JSON.');
+        throw new RuntimeException(viettel_sinvoice_lang('msg_login_invalid_json', 'Viettel SInvoice login returned invalid JSON.'));
     }
 
     $token = viettel_sinvoice_first_non_empty([
@@ -381,7 +396,7 @@ function viettel_sinvoice_access_token(): string
     ]);
 
     if ($token === '') {
-        throw new RuntimeException('Viettel SInvoice login response did not include access_token.');
+        throw new RuntimeException(viettel_sinvoice_lang('msg_login_no_token', 'Viettel SInvoice login response did not include access_token.'));
     }
 
     $accessToken = $token;
@@ -410,7 +425,7 @@ function viettel_sinvoice_auth_headers(): array
         return ['Cookie: access_token=' . viettel_sinvoice_access_token()];
     }
 
-    throw new InvalidArgumentException('Unsupported Viettel SInvoice auth mode.');
+    throw new InvalidArgumentException(viettel_sinvoice_lang('msg_bad_auth_mode', 'Unsupported Viettel SInvoice auth mode.'));
 }
 
 function viettel_sinvoice_api_request(string $method, string $endpoint, ?array $payload = null): array
@@ -466,7 +481,7 @@ function viettel_sinvoice_api_request(string $method, string $endpoint, ?array $
             '_transport_error' => true,
             '_async_candidate' => true,
             '_http_code' => $http,
-            'error' => 'Viettel SInvoice transport error.',
+            'error' => viettel_sinvoice_lang('msg_transport_error', 'Viettel SInvoice transport error.'),
             'curl_errno' => $errno,
         ];
     }
@@ -527,13 +542,13 @@ function viettel_sinvoice_fetch_invoice(int $invoiceId): array
 {
     $invoice = Capsule::table('tblinvoices')->where('id', $invoiceId)->first();
     if (!$invoice) {
-        throw new InvalidArgumentException('Invoice not found.');
+        throw new InvalidArgumentException(viettel_sinvoice_lang('msg_invoice_not_found', 'Invoice not found.'));
     }
 
     $items = Capsule::table('tblinvoiceitems')->where('invoiceid', $invoiceId)->orderBy('id')->get();
     $client = Capsule::table('tblclients')->where('id', (int) $invoice->userid)->first();
     if (!$client) {
-        throw new InvalidArgumentException('Invoice client not found.');
+        throw new InvalidArgumentException(viettel_sinvoice_lang('msg_client_not_found', 'Invoice client not found.'));
     }
 
     $currency = Capsule::table('tblcurrencies')->where('id', (int) $client->currency)->first();
@@ -551,7 +566,7 @@ function viettel_sinvoice_qualify_invoice(int $invoiceId, string &$message): boo
     $message = '';
 
     if (!viettel_sinvoice_configured()) {
-        $message = 'Viettel SInvoice is not fully configured.';
+        $message = viettel_sinvoice_lang('msg_not_configured', 'Viettel SInvoice is not fully configured.');
         return false;
     }
 
@@ -562,17 +577,17 @@ function viettel_sinvoice_qualify_invoice(int $invoiceId, string &$message): boo
     $currencyCode = isset($data['currency']->code) ? strtoupper((string) $data['currency']->code) : 'VND';
 
     if ($currencyCode !== 'VND') {
-        $message = 'Viettel SInvoice currently supports VND invoices only.';
+        $message = viettel_sinvoice_lang('msg_vnd_only', 'Viettel SInvoice currently supports VND invoices only.');
         return false;
     }
 
     if (!in_array((string) $invoice->status, ['Paid', 'Unpaid'], true)) {
-        $message = 'Invoice status is not eligible for HĐĐT issuance.';
+        $message = viettel_sinvoice_lang('msg_status_ineligible', 'Invoice status is not eligible for e-invoice issuance.');
         return false;
     }
 
     if (count($items) === 0) {
-        $message = 'Invoice has no line items.';
+        $message = viettel_sinvoice_lang('msg_no_items', 'Invoice has no line items.');
         return false;
     }
 
@@ -581,18 +596,18 @@ function viettel_sinvoice_qualify_invoice(int $invoiceId, string &$message): boo
         trim((isset($client->firstname) ? $client->firstname : '') . ' ' . (isset($client->lastname) ? $client->lastname : '')),
     ]);
     if ($buyerName === '') {
-        $message = 'Client name is required.';
+        $message = viettel_sinvoice_lang('msg_client_name_required', 'Client name is required.');
         return false;
     }
 
     $address = viettel_sinvoice_client_address($client);
     if ($address === '') {
-        $message = 'Client address is required.';
+        $message = viettel_sinvoice_lang('msg_client_address_required', 'Client address is required.');
         return false;
     }
 
     if (viettel_sinvoice_bool(viettel_sinvoice_setting('requireBuyerTaxCode', ''), false) && viettel_sinvoice_buyer_tax_code($client) === '') {
-        $message = 'Buyer tax code is required.';
+        $message = viettel_sinvoice_lang('msg_buyer_tax_required', 'Buyer tax code is required.');
         return false;
     }
 
@@ -781,7 +796,7 @@ function viettel_sinvoice_build_lines($items): array
     }
 
     if (empty($lines)) {
-        throw new RuntimeException('Invoice has no billable non-discount line items.');
+        throw new RuntimeException(viettel_sinvoice_lang('msg_no_billable_lines', 'Invoice has no billable non-discount line items.'));
     }
 
     return $lines;
@@ -995,7 +1010,7 @@ function viettel_sinvoice_issue_invoice(int $invoiceId, bool $force = false): ar
     $data = viettel_sinvoice_fetch_invoice($invoiceId);
     $record = viettel_sinvoice_create_invoice_record($invoiceId, (int) $data['invoice']->userid);
     if (!$force && in_array((string) $record->status, ['sent', 'async'], true)) {
-        return ['success' => true, 'status' => (string) $record->status, 'message' => 'Invoice already has a Viettel SInvoice record.'];
+        return ['success' => true, 'status' => (string) $record->status, 'message' => viettel_sinvoice_lang('msg_already_recorded', 'Invoice already has a Viettel SInvoice record.')];
     }
 
     try {
@@ -1015,15 +1030,15 @@ function viettel_sinvoice_issue_invoice(int $invoiceId, bool $force = false): ar
         $record = viettel_sinvoice_invoice_record($invoiceId);
         if (viettel_sinvoice_successful_response($response)) {
             viettel_sinvoice_mark_sent($record, $response, 'createInvoice');
-            return ['success' => true, 'status' => 'sent', 'message' => 'Invoice issued successfully.'];
+            return ['success' => true, 'status' => 'sent', 'message' => viettel_sinvoice_lang('msg_issued', 'Invoice issued successfully.')];
         }
 
         if (viettel_sinvoice_should_async($response)) {
             viettel_sinvoice_mark_async($record, 'Viettel SInvoice response is pending or ambiguous; queued for UUID reconciliation.', $response);
-            return ['success' => true, 'status' => 'async', 'message' => 'Invoice queued for reconciliation.'];
+            return ['success' => true, 'status' => 'async', 'message' => viettel_sinvoice_lang('msg_queued', 'Invoice queued for reconciliation.')];
         }
 
-        $message = viettel_sinvoice_provider_message($response, 'Viettel SInvoice issue request failed.');
+        $message = viettel_sinvoice_provider_message($response, viettel_sinvoice_lang('msg_issue_failed', 'Viettel SInvoice issue request failed.'));
         viettel_sinvoice_mark_error($record, $message, $response);
         return ['success' => false, 'status' => 'error', 'message' => $message];
     } catch (Exception $e) {
@@ -1032,7 +1047,7 @@ function viettel_sinvoice_issue_invoice(int $invoiceId, bool $force = false): ar
             viettel_sinvoice_mark_async($record, 'Viettel SInvoice request exception; queued for UUID reconciliation.', ['exception' => get_class($e), 'code' => $e->getCode()]);
         }
 
-        return ['success' => true, 'status' => 'async', 'message' => 'Invoice queued for reconciliation after transport exception.'];
+        return ['success' => true, 'status' => 'async', 'message' => viettel_sinvoice_lang('msg_queued_transport', 'Invoice queued for reconciliation after transport exception.')];
     }
 }
 
@@ -1040,11 +1055,11 @@ function viettel_sinvoice_poll_invoice(int $invoiceId): array
 {
     $record = viettel_sinvoice_invoice_record($invoiceId);
     if (!$record) {
-        return ['success' => false, 'status' => 'missing', 'message' => 'No Viettel SInvoice record found.'];
+        return ['success' => false, 'status' => 'missing', 'message' => viettel_sinvoice_lang('msg_no_record', 'No Viettel SInvoice record found.')];
     }
 
     if ((string) $record->status === 'sent') {
-        return ['success' => true, 'status' => 'sent', 'message' => 'Invoice is already issued.'];
+        return ['success' => true, 'status' => 'sent', 'message' => viettel_sinvoice_lang('msg_already_issued', 'Invoice is already issued.')];
     }
 
     $query = http_build_query([
@@ -1058,7 +1073,7 @@ function viettel_sinvoice_poll_invoice(int $invoiceId): array
 
         if (viettel_sinvoice_successful_response($response)) {
             viettel_sinvoice_mark_sent($record, $response, 'searchInvoiceByTransactionUuid');
-            return ['success' => true, 'status' => 'sent', 'message' => 'Invoice issued successfully.'];
+            return ['success' => true, 'status' => 'sent', 'message' => viettel_sinvoice_lang('msg_issued', 'Invoice issued successfully.')];
         }
 
         $http = isset($response['_http_code']) ? (int) $response['_http_code'] : 0;
@@ -1067,7 +1082,7 @@ function viettel_sinvoice_poll_invoice(int $invoiceId): array
             viettel_sinvoice_array_value($response, 'code'),
         ]));
         if ($http === 404 || in_array($errorCode, ['NOT_FOUND', 'INVOICE_NOT_FOUND', 'TRANSACTION_NOT_FOUND'], true)) {
-            $message = viettel_sinvoice_provider_message($response, 'Viettel SInvoice could not find the transaction UUID.');
+            $message = viettel_sinvoice_provider_message($response, viettel_sinvoice_lang('msg_uuid_not_found', 'Viettel SInvoice could not find the transaction UUID.'));
             viettel_sinvoice_mark_error($record, $message, $response);
             return ['success' => false, 'status' => 'error', 'message' => $message];
         }
@@ -1083,14 +1098,14 @@ function viettel_sinvoice_poll_invoice(int $invoiceId): array
             'metadata' => viettel_sinvoice_json($metadata),
         ]);
 
-        return ['success' => true, 'status' => 'async', 'message' => 'Invoice is still pending.'];
+        return ['success' => true, 'status' => 'async', 'message' => viettel_sinvoice_lang('msg_still_pending', 'Invoice is still pending.')];
     } catch (Exception $e) {
         $record = viettel_sinvoice_invoice_record($invoiceId);
         if ($record) {
             viettel_sinvoice_mark_async($record, 'Viettel SInvoice poll exception; will retry.', ['exception' => get_class($e), 'code' => $e->getCode()]);
         }
 
-        return ['success' => true, 'status' => 'async', 'message' => 'Invoice poll will retry.'];
+        return ['success' => true, 'status' => 'async', 'message' => viettel_sinvoice_lang('msg_poll_retry', 'Invoice poll will retry.')];
     }
 }
 
