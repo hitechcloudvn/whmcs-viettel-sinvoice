@@ -1,0 +1,17 @@
+# Build artifacts / Sản phẩm build
+dist/
+public/
+*.zip
+*.zip.sha256
+
+# Dependencies / Thư viện
+vendor/
+node_modules/
+
+# Editor and OS noise / File tạm editor và hệ điều hành
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/

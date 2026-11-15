@@ -1,0 +1,79 @@
+stages:
+  - lint
+  - package
+
+default:
+  image: php:8.3-cli
+
+lint:php:
+  stage: lint
+  script:
+    - |
+      set -e
+      for f in viettel_sinvoice.php hooks.php lib/bootstrap.php lang/english.php lang/vietnamese.php; do
+        php -l "$f"
+      done
+      find . -name '*.php' -not -path './.git/*' -print0 | xargs -0 -n1 php -l
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG
+
+lint:security-grep:
+  stage: lint
+  script:
+    - |
+      set -e
+      ! grep -rnE 'CURLOPT_SSL_VERIFYPEER[^;]*(false|0)|CURLOPT_SSL_VERIFYHOST[^;]*(false|0|[^0-9]1)' viettel_sinvoice.php hooks.php lib lang
+      ! grep -rniE "(password|secret|api_?key|token)[[:space:]]*=>[[:space:]]*'[^']{8,}'" viettel_sinvoice.php hooks.php lib lang
+      ! grep -rnE '\b(eval|shell_exec|passthru|unserialize|var_dump|print_r)[[:space:]]*\(' viettel_sinvoice.php hooks.php lib lang
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG
+
+package:module:
+  stage: package
+  needs: ["lint:php", "lint:security-grep"]
+  script:
+    - |
+      set -e
+      apk add --no-cache zip
+      STAGE="viettel_sinvoice"
+      mkdir -p "dist/${STAGE}"
+      cp viettel_sinvoice.php hooks.php README.md CHANGELOG.md LICENSE NOTICE \
+         LEGAL-NOTICE.md COMMERCIAL-LICENSE.md SECURITY.md SUPPORT.md \
+         CONTRIBUTING.md CODE_OF_CONDUCT.md "dist/${STAGE}/"
+      cp -r lib lang docs "dist/${STAGE}/"
+      cd dist
+      zip -r "../whmcs-viettel-sinvoice-${CI_COMMIT_TAG:-$CI_COMMIT_SHORT_SHA}.zip" "${STAGE}"
+      cd ..
+      sha256sum "whmcs-viettel-sinvoice-${CI_COMMIT_TAG:-$CI_COMMIT_SHORT_SHA}.zip" > "whmcs-viettel-sinvoice-${CI_COMMIT_TAG:-$CI_COMMIT_SHORT_SHA}.zip.sha256"
+      mkdir -p public
+      cp "whmcs-viettel-sinvoice-${CI_COMMIT_TAG:-$CI_COMMIT_SHORT_SHA}.zip" "whmcs-viettel-sinvoice-${CI_COMMIT_TAG:-$CI_COMMIT_SHORT_SHA}.zip.sha256" public/
+  artifacts:
+    paths:
+      - public/
+    expire_in: 30 days
+  rules:
+    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+release:gitlab:
+  stage: package
+  needs: ["package:module"]
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  rules:
+    - if: $CI_COMMIT_TAG
+  script:
+    - echo "Publishing GitLab release ${CI_COMMIT_TAG}"
+  release:
+    tag_name: $CI_COMMIT_TAG
+    name: "Viettel SInvoice for WHMCS $CI_COMMIT_TAG"
+    description: "Release $CI_COMMIT_TAG. Install by extracting to modules/addons/viettel_sinvoice/ in your WHMCS installation."
+    assets:
+      links:
+        - name: "whmcs-viettel-sinvoice-$CI_COMMIT_TAG.zip"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_TAG}/raw/public/whmcs-viettel-sinvoice-${CI_COMMIT_TAG}.zip?job=package:module"
+        - name: "whmcs-viettel-sinvoice-$CI_COMMIT_TAG.zip.sha256"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_TAG}/raw/public/whmcs-viettel-sinvoice-${CI_COMMIT_TAG}.zip.sha256?job=package:module"

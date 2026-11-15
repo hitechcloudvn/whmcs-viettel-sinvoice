@@ -1,0 +1,57 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Lint, package and publish release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: curl, json
+          coverage: none
+
+      - name: PHP lint before release
+        run: |
+          set -e
+          for f in viettel_sinvoice.php hooks.php lib/bootstrap.php lang/english.php lang/vietnamese.php; do
+            php -l "$f"
+          done
+
+      - name: Package module
+        run: |
+          set -e
+          VERSION="${GITHUB_REF_NAME}"
+          STAGE="viettel_sinvoice"
+          mkdir -p "dist/${STAGE}"
+          cp viettel_sinvoice.php hooks.php README.md CHANGELOG.md LICENSE NOTICE \
+             LEGAL-NOTICE.md COMMERCIAL-LICENSE.md SECURITY.md SUPPORT.md \
+             CONTRIBUTING.md CODE_OF_CONDUCT.md "dist/${STAGE}/"
+          cp -r lib lang docs "dist/${STAGE}/"
+          cd dist
+          zip -r "../whmcs-viettel-sinvoice-${VERSION}.zip" "${STAGE}"
+          cd ..
+          sha256sum "whmcs-viettel-sinvoice-${VERSION}.zip" > "whmcs-viettel-sinvoice-${VERSION}.zip.sha256"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            "whmcs-viettel-sinvoice-${GITHUB_REF_NAME}.zip" \
+            "whmcs-viettel-sinvoice-${GITHUB_REF_NAME}.zip.sha256" \
+            --title "Viettel SInvoice for WHMCS ${GITHUB_REF_NAME}" \
+            --notes "Release ${GITHUB_REF_NAME}. Install by extracting to modules/addons/viettel_sinvoice/ in your WHMCS installation. See README.md and docs/INSTALLATION.md." \
+            --verify-tag
