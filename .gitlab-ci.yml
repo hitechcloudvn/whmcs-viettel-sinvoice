@@ -38,7 +38,7 @@ package:module:
   script:
     - |
       set -e
-      apk add --no-cache zip
+      apt-get update -qq && apt-get install -y -qq zip
       STAGE="viettel_sinvoice"
       mkdir -p "dist/${STAGE}"
       cp viettel_sinvoice.php hooks.php README.md CHANGELOG.md LICENSE NOTICE \
