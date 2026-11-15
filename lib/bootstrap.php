@@ -413,7 +413,7 @@ function viettel_sinvoice_auth_headers(): array
     throw new InvalidArgumentException('Unsupported Viettel SInvoice auth mode.');
 }
 
-function viettel_sinvoice_api_request(string $method, string $endpoint, array $payload = null): array
+function viettel_sinvoice_api_request(string $method, string $endpoint, ?array $payload = null): array
 {
     $url = viettel_sinvoice_base_url() . $endpoint;
     $headers = viettel_sinvoice_auth_headers();
